@@ -3,7 +3,16 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import "./App.css";
 
-const API = "http://localhost:8080/api";
+const API = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
+
+const fetchData = () =>
+  Promise.all([
+    axios.get(`${API}/students`),
+    axios.get(`${API}/companies`),
+    axios.get(`${API}/jobs`),
+    axios.get(`${API}/applications`),
+    axios.get(`${API}/placements`)
+  ]);
 
 function App() {
   const [page, setPage] = useState("Dashboard");
@@ -16,25 +25,20 @@ function App() {
   const [error, setError] = useState("");
   const [form, setForm] = useState({});
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
 
   const loadData = async () => {
     setError("");
 
     try {
-      const results = await Promise.all([
-        axios.get(`${API}/students`),
-        axios.get(`${API}/companies`),
-        axios.get(`${API}/jobs`),
-        axios.get(`${API}/applications`),
-        axios.get(`${API}/placements`)
-      ]);
+      const results = await fetchData();
 
       setStudents(results[0].data);
       setCompanies(results[1].data);
       setJobs(results[2].data);
       setApplications(results[3].data);
       setPlacements(results[4].data);
-    } catch (err) {
+    } catch {
       setError(
         "Unable to load data. Check that the Spring Boot backend is running on port 8080."
       );
@@ -44,12 +48,42 @@ function App() {
   };
 
   useEffect(() => {
-    loadData();
+    let active = true;
+
+    fetchData()
+      .then((results) => {
+        if (!active) {
+          return;
+        }
+
+        setStudents(results[0].data);
+        setCompanies(results[1].data);
+        setJobs(results[2].data);
+        setApplications(results[3].data);
+        setPlacements(results[4].data);
+      })
+      .catch(() => {
+        if (active) {
+          setError(
+            "Unable to load data. Check that the Spring Boot backend is running on port 8080."
+          );
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const resetForm = () => {
     setForm({});
     setShowForm(false);
+    setEditingId(null);
   };
 
   const updateField = (event) => {
@@ -61,37 +95,59 @@ function App() {
 
   const addRecord = async (event) => {
     event.preventDefault();
+    const wasEditing = editingId !== null;
 
     try {
       if (page === "Students") {
-        await axios.post(`${API}/students`, {
+        const student = {
           fullName: form.fullName,
           email: form.email,
           phone: form.phone,
           department: form.department,
           graduationYear: Number(form.graduationYear),
           cgpa: Number(form.cgpa)
-        });
+        };
+
+        if (wasEditing) {
+          await axios.put(`${API}/students/${editingId}`, student);
+        } else {
+          await axios.post(`${API}/students`, student);
+        }
       } else if (page === "Companies") {
-        await axios.post(`${API}/companies`, {
+        const company = {
           name: form.name,
           industry: form.industry,
           location: form.location,
           website: form.website,
           contactEmail: form.contactEmail
-        });
+        };
+
+        if (wasEditing) {
+          await axios.put(`${API}/companies/${editingId}`, company);
+        } else {
+          await axios.post(`${API}/companies`, company);
+        }
       } else if (page === "Jobs") {
-        await axios.post(
-          `${API}/jobs?companyId=${encodeURIComponent(form.companyId)}`,
-          {
-            title: form.title,
-            description: form.description,
-            eligibilityCriteria: form.eligibilityCriteria,
-            salary: Number(form.salary),
-            deadline: form.deadline,
-            status: "ACTIVE"
-          }
-        );
+        const job = {
+          title: form.title,
+          description: form.description,
+          eligibilityCriteria: form.eligibilityCriteria,
+          salary: Number(form.salary),
+          deadline: form.deadline,
+          status: wasEditing ? form.status : "ACTIVE"
+        };
+
+        if (wasEditing) {
+          await axios.put(`${API}/jobs/${editingId}`, {
+            ...job,
+            company: { id: Number(form.companyId) }
+          });
+        } else {
+          await axios.post(
+            `${API}/jobs?companyId=${encodeURIComponent(form.companyId)}`,
+            job
+          );
+        }
       } else if (page === "Applications") {
         await axios.post(
           `${API}/applications?studentId=${encodeURIComponent(form.studentId)}&jobId=${encodeURIComponent(form.jobId)}`
@@ -111,7 +167,9 @@ function App() {
 
       resetForm();
       await loadData();
-      alert(`${page === "Placements" ? "Placement" : page.slice(0, -1)} saved successfully.`);
+      alert(
+        `${page === "Placements" ? "Placement" : page.slice(0, -1)} ${wasEditing ? "updated" : "saved"} successfully.`
+      );
     } catch (err) {
       alert(
         err.response?.data?.message ||
@@ -158,7 +216,7 @@ function App() {
     try {
       await axios.delete(`${API}/${resource}/${id}`);
       await loadData();
-    } catch (err) {
+    } catch {
       alert(
         "Could not delete this record. It may be linked to another record."
       );
@@ -176,7 +234,42 @@ function App() {
 
   const openForm = () => {
     setForm({});
+    setEditingId(null);
     setShowForm(true);
+  };
+
+  const editRecord = (record) => {
+    setEditingId(record.id);
+    setShowForm(true);
+
+    if (page === "Students") {
+      setForm({
+        fullName: record.fullName ?? "",
+        email: record.email ?? "",
+        phone: record.phone ?? "",
+        department: record.department ?? "",
+        graduationYear: record.graduationYear ?? "",
+        cgpa: record.cgpa ?? ""
+      });
+    } else if (page === "Companies") {
+      setForm({
+        name: record.name ?? "",
+        industry: record.industry ?? "",
+        location: record.location ?? "",
+        website: record.website ?? "",
+        contactEmail: record.contactEmail ?? ""
+      });
+    } else if (page === "Jobs") {
+      setForm({
+        companyId: record.company?.id ?? "",
+        title: record.title ?? "",
+        description: record.description ?? "",
+        eligibilityCriteria: record.eligibilityCriteria ?? "",
+        salary: record.salary ?? "",
+        deadline: record.deadline ?? "",
+        status: record.status ?? "ACTIVE"
+      });
+    }
   };
 
   const fields = {
@@ -360,13 +453,16 @@ function App() {
                     required
                     name={name}
                     type={type}
+                    value={form[name] ?? ""}
                     onChange={updateField}
                     step={name === "cgpa" ? "0.01" : undefined}
                   />
                 </label>
               ))}
               <div className="form-actions">
-                <button className="primary-btn">Save student</button>
+                <button className="primary-btn">
+                  {editingId === null ? "Save student" : "Update student"}
+                </button>
                 <button
                   type="button"
                   className="secondary-btn"
@@ -389,12 +485,20 @@ function App() {
                 <td>{student.graduationYear}</td>
                 <td>{student.cgpa}</td>
                 <td>
-                  <button
-                    className="delete-btn"
-                    onClick={() => deleteRecord("students", student.id)}
-                  >
-                    Delete
-                  </button>
+                  <div className="row-actions">
+                    <button
+                      className="edit-btn"
+                      onClick={() => editRecord(student)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="delete-btn"
+                      onClick={() => deleteRecord("students", student.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))
@@ -425,12 +529,15 @@ function App() {
                     required
                     name={name}
                     type={type}
+                    value={form[name] ?? ""}
                     onChange={updateField}
                   />
                 </label>
               ))}
               <div className="form-actions">
-                <button className="primary-btn">Save company</button>
+                <button className="primary-btn">
+                  {editingId === null ? "Save company" : "Update company"}
+                </button>
                 <button
                   type="button"
                   className="secondary-btn"
@@ -452,12 +559,20 @@ function App() {
                 <td>{company.location}</td>
                 <td>{company.contactEmail}</td>
                 <td>
-                  <button
-                    className="delete-btn"
-                    onClick={() => deleteRecord("companies", company.id)}
-                  >
-                    Delete
-                  </button>
+                  <div className="row-actions">
+                    <button
+                      className="edit-btn"
+                      onClick={() => editRecord(company)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="delete-btn"
+                      onClick={() => deleteRecord("companies", company.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))
@@ -505,13 +620,39 @@ function App() {
                     required
                     name={name}
                     type={type}
+                    value={form[name] ?? ""}
                     onChange={updateField}
                   />
                 </label>
               ))}
 
+              {editingId !== null && (
+                <label>
+                  Job status
+                  <select
+                    required
+                    name="status"
+                    value={form.status ?? "ACTIVE"}
+                    onChange={updateField}
+                  >
+                    {Array.from(
+                      new Set([
+                        ...jobs.map((job) => job.status),
+                        form.status
+                      ].filter(Boolean))
+                    ).map((status) => (
+                      <option key={status} value={status}>
+                        {titleCase(status)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
               <div className="form-actions">
-                <button className="primary-btn">Publish job</button>
+                <button className="primary-btn">
+                  {editingId === null ? "Publish job" : "Update job"}
+                </button>
                 <button
                   type="button"
                   className="secondary-btn"
@@ -534,12 +675,20 @@ function App() {
                 <td>{job.deadline || "—"}</td>
                 <td><span className="status">{job.status}</span></td>
                 <td>
-                  <button
-                    className="delete-btn"
-                    onClick={() => deleteRecord("jobs", job.id)}
-                  >
-                    Delete
-                  </button>
+                  <div className="row-actions">
+                    <button
+                      className="edit-btn"
+                      onClick={() => editRecord(job)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="delete-btn"
+                      onClick={() => deleteRecord("jobs", job.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))
