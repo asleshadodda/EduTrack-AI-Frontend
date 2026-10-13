@@ -3,16 +3,59 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import "./App.css";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
+const API = (
+  import.meta.env.VITE_API_URL || "http://localhost:8080/api"
+).trim().replace(/\/+$/, "");
+
+const fetchCollection = async (resource) => {
+  const url = `${API}/${resource}`;
+  let response;
+
+  try {
+    response = await axios.get(url);
+  } catch (error) {
+    const path = new URL(url, window.location.origin).pathname;
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        const corsHint =
+          error.response.status === 403
+            ? " Check that the backend CORS allowlist includes https://edu-track-ai-frontend.vercel.app."
+            : "";
+        throw new Error(
+          `GET ${path} failed with HTTP ${error.response.status}.${corsHint}`,
+          { cause: error }
+        );
+      }
+
+      throw new Error(
+        `GET ${path} received no response. This may be a network or CORS issue.`,
+        { cause: error }
+      );
+    }
+
+    throw error;
+  }
+
+  if (!Array.isArray(response.data)) {
+    throw new Error(`GET /api/${resource} returned an unexpected response; expected a JSON array.`);
+  }
+
+  return response;
+};
 
 const fetchData = () =>
   Promise.all([
-    axios.get(`${API}/students`),
-    axios.get(`${API}/companies`),
-    axios.get(`${API}/jobs`),
-    axios.get(`${API}/applications`),
-    axios.get(`${API}/placements`)
+    fetchCollection("students"),
+    fetchCollection("companies"),
+    fetchCollection("jobs"),
+    fetchCollection("applications"),
+    fetchCollection("placements")
   ]);
+
+const getLoadErrorMessage = (error) =>
+  error instanceof Error
+    ? error.message
+    : "Unable to load dashboard data. Check the API URL and backend CORS configuration.";
 
 function App() {
   const [page, setPage] = useState("Dashboard");
@@ -38,10 +81,8 @@ function App() {
       setJobs(results[2].data);
       setApplications(results[3].data);
       setPlacements(results[4].data);
-    } catch {
-      setError(
-        "Unable to load data. Check that the Spring Boot backend is running on port 8080."
-      );
+    } catch (error) {
+      setError(getLoadErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -62,11 +103,9 @@ function App() {
         setApplications(results[3].data);
         setPlacements(results[4].data);
       })
-      .catch(() => {
+      .catch((error) => {
         if (active) {
-          setError(
-            "Unable to load data. Check that the Spring Boot backend is running on port 8080."
-          );
+          setError(getLoadErrorMessage(error));
         }
       })
       .finally(() => {
