@@ -6,16 +6,24 @@ import "./App.css";
 const API = (
   import.meta.env.VITE_API_URL || "http://localhost:8080/api"
 ).trim().replace(/\/+$/, "");
+const API_TIMEOUT_MS = 15000;
 
 const fetchCollection = async (resource) => {
   const url = `${API}/${resource}`;
   let response;
 
   try {
-    response = await axios.get(url);
+    response = await axios.get(url, { timeout: API_TIMEOUT_MS });
   } catch (error) {
     const path = new URL(url, window.location.origin).pathname;
     if (axios.isAxiosError(error)) {
+      if (error.code === "ECONNABORTED" || error.code === "ETIMEDOUT") {
+        throw new Error(
+          `GET ${path} timed out after ${API_TIMEOUT_MS / 1000} seconds. Check the backend and retry.`,
+          { cause: error }
+        );
+      }
+
       if (error.response) {
         const corsHint =
           error.response.status === 403
@@ -72,6 +80,7 @@ function App() {
 
   const loadData = async () => {
     setError("");
+    setLoading(true);
 
     try {
       const results = await fetchData();
