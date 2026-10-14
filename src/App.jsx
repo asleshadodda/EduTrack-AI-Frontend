@@ -528,9 +528,9 @@ function App() {
 
           {renderTable(
             ["ID", "Student", "Email", "Department", "Year", "CGPA", "Action"],
-            students.map((student) => (
+            students.map((student, index) => (
               <tr key={student.id}>
-                <td>{student.id}</td>
+                <td>{index + 1}</td>
                 <td><strong>{student.fullName}</strong></td>
                 <td>{student.email}</td>
                 <td>{student.department}</td>
