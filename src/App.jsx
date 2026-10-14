@@ -3,10 +3,14 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import "./App.css";
 
-const API = (
-  import.meta.env.VITE_API_URL || "http://localhost:8080/api"
-).trim().replace(/\/+$/, "");
-const API_TIMEOUT_MS = 15000;
+const DEFAULT_API_URL =
+  import.meta.env.PROD
+    ? "https://edutrack-ai-backend-4sb4.onrender.com/api"
+    : "http://localhost:8080/api";
+const API = (import.meta.env.VITE_API_URL || DEFAULT_API_URL)
+  .trim()
+  .replace(/\/+$/, "");
+const API_TIMEOUT_MS = 60000;
 
 const fetchCollection = async (resource) => {
   const url = `${API}/${resource}`;
